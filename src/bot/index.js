@@ -1,48 +1,72 @@
-const { Telegraf } = require('telegraf');
-const { handleUpload } = require('./handlers/upload');
-const { handlePublish } = require('./handlers/publish');
+const { Telegraf } = require("telegraf");
+const fs = require("fs");
+const path = require("path");
+
+const { handleUpload } = require("./handlers/upload");
+const { handlePublish } = require("./handlers/publish");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const adminId = process.env.ADMIN_ID;
 
-bot.start((ctx) => {
-  if (ctx.chat.type !== 'private') return;
-  ctx.reply('🚀 مرحبًا بك في منصة الاختبارات السريعة الصافية.\nارفع ملف الـ .txt الخاص بالأسئلة الآن!');
-});
+const groupsFile = path.join(__dirname, "../../groups.json");
 
-// أمر النشر للأدمن فقط
-bot.command('publish', async (ctx) => {
-  if (String(ctx.from.id) !== String(adminId)) return ctx.reply('❌ للأدمن فقط!');
-  return handlePublish(ctx);
-});
+// تحميل الجروبات من ملف JSON
+function loadGroups() {
+  if (!fs.existsSync(groupsFile)) {
+    fs.writeFileSync(groupsFile, JSON.stringify([]));
+  }
+  return JSON.parse(fs.readFileSync(groupsFile));
+}
 
-// محرك الـ Inline Action لضخ الكويزات عن بُعد من الخاص
-bot.action(/publish_(.+)/, async (ctx) => {
+// حفظ الجروبات في ملف JSON
+function saveGroups(groups) {
+  fs.writeFileSync(groupsFile, JSON.stringify(groups, null, 2));
+}
+
+// 📡 حارس قنص وحفظ الجروبات تلقائياً بمجرد إضافة البوت كـ Admin
+bot.on("my_chat_member", async (ctx) => {
   try {
-    const targetId = ctx.match[1];
-    await ctx.answerCbQuery(); 
-    ctx.targetId = targetId;
-    return await handlePublish(ctx);
+    const chat = ctx.chat;
+
+    if (!chat || (chat.type !== "group" && chat.type !== "supergroup" && chat.type !== "channel")) {
+      return;
+    }
+
+    let groups = loadGroups();
+    const exists = groups.find((g) => g.id === chat.id);
+
+    if (!exists) {
+      groups.push({
+        id: chat.id,
+        title: chat.title,
+        type: chat.type
+      });
+
+      saveGroups(groups);
+      console.log(`✅ Saved New Target: ${chat.title}`);
+    }
   } catch (err) {
-    console.log('❌ Publish Action Error:', err.message);
+    console.log("❌ Auto Save Group Error:", err.message);
   }
 });
 
-// حارس استقبال ملفات الأسئلة (TXT فقط بأعلى استقرار)
-bot.on('document', async (ctx) => {
+bot.start((ctx) => {
+  if (ctx.chat.type !== "private") return;
+  ctx.reply("🚀 ارفع ملف الأسئلة TXT ثم استخدم /publish");
+});
+
+// حارس استقبال ورفع ملفات الأسئلة
+bot.on("document", async (ctx) => {
   if (String(ctx.from.id) !== String(adminId)) return;
-  
-  const fName = ctx.message.document.file_name;
-  if (!fName.endsWith('.txt')) {
-    return ctx.reply('❌ عذراً، المنصة تقبل ملفات بنوك الأسئلة بصيغة .txt فقط لضمان استقرار النشر!');
-  }
-  
   return handleUpload(ctx);
 });
 
-// لمنع تعليق زرار اسم الجروب الشفاف
-bot.action('noop', async (ctx) => {
-  await ctx.answerCbQuery();
+// أمر النشر والضخ الشامل للجروبات المسجلة
+bot.command("publish", async (ctx) => {
+  if (String(ctx.from.id) !== String(adminId)) {
+    return ctx.reply("❌ للأدمن فقط");
+  }
+  return handlePublish(ctx);
 });
 
 module.exports = bot;

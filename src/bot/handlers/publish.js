@@ -1,83 +1,86 @@
-const { getQuestions } = require('../../utils/storage');
+const fs = require("fs");
+const path = require("path");
+const { getQuestions } = require("../../utils/storage");
+
+const groupsFile = path.join(__dirname, "../../../groups.json");
+
+// تحميل الجروبات المستهدفة لايف من الـ JSON
+function loadGroups() {
+  if (!fs.existsSync(groupsFile)) {
+    return [];
+  }
+  return JSON.parse(fs.readFileSync(groupsFile));
+}
 
 async function handlePublish(ctx) {
   try {
     const userId = ctx.from.id;
 
-    // 🎯 ضع هنا الـ Chat ID الثابت والمؤقت لجروب مكثف المنيا أو الـ Hub
-    // ملحوظة: تليجرام IDs للجروبات بتبدأ بـ -100 دايماً
-    const TARGET_CHAT_ID = "-1003941865995"; 
-
-    // جلب الأسئلة المخزنة
+    // جلب الأسئلة المخزنة مؤقتاً
     const quizData = getQuestions(userId);
     if (!quizData) {
-      return ctx.reply('❌ لا توجد أسئلة نشطة حالياً. يرجى رفع ملف .txt أولاً!');
+      return ctx.reply("❌ ارفع ملف الأسئلة أولاً");
     }
 
-    const { lectureName: lectureTitle, questions } = quizData;
+    const groups = loadGroups();
+    if (!groups.length) {
+      return ctx.reply("❌ لا توجد جروبات محفوظة");
+    }
 
-    // رسالة البداية النظيفة والمصفاة تماماً
-    await ctx.telegram.sendMessage(
-      TARGET_CHAT_ID,
-      `📚 بداية كويز المحاضرة:\n\n🔥 ${lectureTitle} 🔥`
-    );
+    const { lectureName, questions } = quizData;
 
-    let sentCount = 0;
-
-    for (const q of questions) {
+    // الحلقة الكبرى للمرور على كل الجروبات والقنوات المسجلة
+    for (const group of groups) {
       try {
-        // وضع التخفي النشط والاحترافي لحماية الجروب
-        await ctx.telegram.sendPoll(
-          TARGET_CHAT_ID,
-          `Q${sentCount + 1}) ${q.question}`,
-          q.options,
-          {
-            type: 'quiz',
-            correct_option_id: q.correct,
-            is_anonymous: true
-          }
+        // بانر البداية النظيف لكل جروب
+        await ctx.telegram.sendMessage(
+          group.id,
+          `📚 ${lectureName}`
         );
 
-        sentCount++;
-        console.log(`⚡ [Quiz Engine] Sent Question [${sentCount}/${questions.length}].`);
+        let count = 0;
 
-        // الـ Smart Delay الآمن ضد الـ Rate Limits (4 ثواني)
-        await new Promise(resolve => setTimeout(resolve, 4000));
+        // ضخ الأسئلة سؤال تلو الآخر مع الـ Pacing لمنع الـ Flood
+        for (const q of questions) {
+          try {
+            await ctx.telegram.sendPoll(
+              group.id,
+              `Q${count + 1}) ${q.question}`,
+              q.options,
+              {
+                type: "quiz",
+                correct_option_id: q.correct,
+                is_anonymous: true // وضع التخفي النشط لحماية الأداء 🕵️‍♂️🔥
+              }
+            );
 
-      } catch (pollError) {
-        console.error(`❌ Error sending poll at index ${sentCount}:`, pollError.message);
-        
-        // الـ Auto Retry الاحترافي لو تليجرام رخم بـ 429
-        if (pollError.message.includes('429') || pollError.message.includes('retry after')) {
-          const matchSeconds = pollError.message.match(/retry after (\d+)/i);
-          const waitTime = matchSeconds ? parseInt(matchSeconds[1]) * 1000 : 9000;
-          
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          
-          await ctx.telegram.sendPoll(
-            TARGET_CHAT_ID,
-            `Q${sentCount + 1}) ${q.question}`,
-            q.options,
-            { type: 'quiz', correct_option_id: q.correct, is_anonymous: true }
-          );
-          sentCount++;
-          await new Promise(resolve => setTimeout(resolve, 4000));
+            count++;
+            console.log(`✅ Sent ${count}/${questions.length} -> ${group.title}`);
+
+            // الـ Smart Delay المعتمد (4 ثواني هدوء بين كل سؤال وسؤال) 🏎️
+            await new Promise((r) => setTimeout(r, 4000));
+
+          } catch (err) {
+            console.log("❌ Poll Error:", err.message);
+          }
         }
+
+        // بانر النهاية النظيف لكل جروب بعد اكتمال الضخ
+        await ctx.telegram.sendMessage(
+          group.id,
+          `✅ انتهت أسئلة ${lectureName}`
+        );
+
+      } catch (err) {
+        console.log("❌ Group Publish Error:", err.message);
       }
     }
 
-    // رسالة النهاية الرسمية والصافية تماماً بدون أي حشو
-    await ctx.telegram.sendMessage(
-      TARGET_CHAT_ID,
-      `✅ انتهت أسئلة محاضرة:\n\n${lectureTitle}`
-    );
+    return ctx.reply("🚀 تم نشر الأسئلة بنجاح");
 
-    // تأكيد الإتمام للأدمن في الخاص
-    return ctx.telegram.sendMessage(userId, `🚀 **تم ضخ ونشر الـ [ ${sentCount} سؤال ] بنجاح كامل على السيرفر وبوضع التخفي النظيف!**`);
-
-  } catch (error) {
-    console.error('❌ Publish Handler Mega Error:', error.message);
-    ctx.reply('❌ حدث خطأ غير متوقع أثناء ضخ ونشر الأسئلة.');
+  } catch (err) {
+    console.log("❌ Publish Error:", err.message);
+    return ctx.reply("❌ حدث خطأ أثناء النشر");
   }
 }
 
