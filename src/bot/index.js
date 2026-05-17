@@ -2,15 +2,18 @@ const { Telegraf } = require("telegraf");
 const fs = require("fs");
 const path = require("path");
 
-const { handleUpload } = require("./handlers/upload");
-const { handlePublish } = require("./handlers/publish");
+const {
+  handleUpload,
+  publishToGroup
+} = require("./handlers/upload"); // تأكيد استدعاء الـ Destructuring الكامل والمطهر
+const { handlePublish, publishToGroup: publishFn } = require("./handlers/publish");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const adminId = process.env.ADMIN_ID;
 
 const groupsFile = path.join(__dirname, "../../groups.json");
 
-// تحميل الجروبات من ملف JSON
+// تحميل الجروبات
 function loadGroups() {
   if (!fs.existsSync(groupsFile)) {
     fs.writeFileSync(groupsFile, JSON.stringify([]));
@@ -18,12 +21,12 @@ function loadGroups() {
   return JSON.parse(fs.readFileSync(groupsFile));
 }
 
-// حفظ الجروبات في ملف JSON
+// حفظ الجروبات
 function saveGroups(groups) {
   fs.writeFileSync(groupsFile, JSON.stringify(groups, null, 2));
 }
 
-// 🎯 التعديل الذهبي الأضمن: لقط وحفظ الأهداف تلقائياً عند استقبال أي رسالة
+// لقط وحفظ الأهداف تلقائياً عند استقبال أي رسالة (صخر ومضمون 100%)
 bot.on("message", async (ctx, next) => {
   try {
     const chat = ctx.chat;
@@ -51,8 +54,7 @@ bot.on("message", async (ctx, next) => {
   } catch (err) {
     console.log("❌ Auto Save Error:", err.message);
   }
-
-  return next(); // تمرير الرسالة للأوامر اللاحقة بدون أي تعطيل
+  return next();
 });
 
 bot.start((ctx) => {
@@ -60,18 +62,29 @@ bot.start((ctx) => {
   ctx.reply("🚀 ارفع ملف الأسئلة TXT ثم استخدم /publish");
 });
 
-// رفع واستقبال ملفات الأسئلة الطبية والأكاديمية
+// رفع واستقبال ملفات الأسئلة 
 bot.on("document", async (ctx) => {
   if (String(ctx.from.id) !== String(adminId)) return;
   return handleUpload(ctx);
 });
 
-// أمر النشر والضخ الشامل
+// أمر النشر وبناء قائمة الأزرار
 bot.command("publish", async (ctx) => {
   if (String(ctx.from.id) !== String(adminId)) {
     return ctx.reply("❌ للأدمن فقط");
   }
   return handlePublish(ctx);
+});
+
+// 🎯 التعديل الفولاذي المعتمد منك: التقاط كليكة الزرار وضخ الكويز للجروب المختار فوراً
+bot.action(/publish_(.+)/, async (ctx) => {
+  try {
+    const groupId = ctx.match[1];
+    await ctx.answerCbQuery(); // مسح علامة التحميل الشفافة من الزرار فوراً
+    return publishFn(ctx, groupId);
+  } catch (err) {
+    console.log("❌ Action Error:", err.message);
+  }
 });
 
 module.exports = bot;
