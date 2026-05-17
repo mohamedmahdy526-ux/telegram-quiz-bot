@@ -21,30 +21,31 @@ function loadGroups() {
 async function handlePublish(ctx) {
   try {
     const groupsObject = loadGroups();
-    const groupsArray = Object.values(groupsObject); // تحويل الـ Object لـ Array فقط عند رص الأزرار
+    const groupsArray = Object.values(groupsObject);
 
     if (!groupsArray.length) {
-      return ctx.reply("❌ لا توجد جروبات محفوظة");
+      return ctx.reply("❌ لا توجد أهداف أو جروبات محفوظة");
     }
 
-    // 🔘 إنشاء الأزرار: الاسم ظاهر + الـ ID مخفي داخلياً بالملي لمنع لخبطة الأندرويد
+    // 🎯 التعديل الأسطوري الفخم بتاعك: تمييز الخاص عن العام بالـ Emojis والأسماء النظيفة
     const buttons = groupsArray.map((group) => {
+      const label = group.type === "private"
+        ? `👤 ${group.title} (خاص)`
+        : `📢 ${group.title} (عام)`;
+
       return [
-        Markup.button.callback(
-          `${group.title} (${group.type === 'private' ? 'خاص 👤' : 'عام 📢'})`,
-          `publish_${group.id}` // الـ ID محمي ومخفي جوه الـ Callback Data
-        )
+        Markup.button.callback(label, `publish_${group.id}`)
       ];
     });
 
     return ctx.reply(
-      "📡 اختر الجروب، القناة أو الشات الخاص للنشر:",
+      "📡 اختر المكان المراد ضخ الكويز إليه:",
       Markup.inlineKeyboard(buttons)
     );
 
   } catch (err) {
     console.log("❌ Publish Menu Error:", err.message);
-    return ctx.reply("❌ حدث خطأ في جلب قائمة الأهداف.");
+    return ctx.reply("❌ حدث خطأ أثناء جلب قائمة الأهداف.");
   }
 }
 
@@ -59,7 +60,7 @@ async function publishToGroup(ctx, groupId) {
     }
 
     const groupsObject = loadGroups();
-    const target = groupsObject[String(groupId)]; // سحب الهدف فوراً بـ الكي (O(1) Speed) بدون لف ودوران
+    const target = groupsObject[String(groupId)];
 
     if (!target) {
       return ctx.reply("❌ الهدف المختار غير موجود في القائمة");
