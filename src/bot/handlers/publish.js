@@ -1,11 +1,12 @@
-const db = require('../../database/db');
 const { getQuestions } = require('../../utils/storage');
-const { Markup } = require('telegraf');
 
 async function handlePublish(ctx) {
   try {
     const userId = ctx.from.id;
-    const targetId = ctx.targetId;
+
+    // 🎯 ضع هنا الـ Chat ID الثابت والمؤقت لجروب مكثف المنيا أو الـ Hub
+    // ملحوظة: تليجرام IDs للجروبات بتبدأ بـ -100 دايماً
+    const TARGET_CHAT_ID = "-1003941865995"; 
 
     // جلب الأسئلة المخزنة
     const quizData = getQuestions(userId);
@@ -15,29 +16,9 @@ async function handlePublish(ctx) {
 
     const { lectureName: lectureTitle, questions } = quizData;
 
-    // عرض القائمة الشفافة لو لم يتم اختيار هدف بعد
-    if (!targetId) {
-      const dynamicTargets = db.prepare('SELECT id, name FROM targets').all();
-
-      if (dynamicTargets.length === 0) {
-        return ctx.reply('📥 لا توجد جروبات أو قنوات مسجلة حالياً في الـ SQLite.\nأضف البوت كـ Admin في أي مكان ليظهر هنا تلقائياً!');
-      }
-
-      let menuText = `🎯 **اختر المكان المراد ضخ الكويز إليه لايف:**\n`;
-      menuText += `------------------------------------\n`;
-      menuText += `📚 المحاضرة الحالية: \`${lectureTitle}\`\n`;
-      menuText += `📊 عدد الأسئلة: [ ${questions.length} سؤال ]`;
-
-      const buttons = dynamicTargets.map(target => [
-        Markup.button.callback(`📢 ${target.name}`, `publish_${target.id}`)
-      ]);
-
-      return ctx.reply(menuText, Markup.inlineKeyboard(buttons));
-    }
-
     // رسالة البداية النظيفة والمصفاة تماماً
     await ctx.telegram.sendMessage(
-      targetId,
+      TARGET_CHAT_ID,
       `📚 بداية كويز المحاضرة:\n\n🔥 ${lectureTitle} 🔥`
     );
 
@@ -45,15 +26,15 @@ async function handlePublish(ctx) {
 
     for (const q of questions) {
       try {
-        // 🎯 التعديل الاحترافي: جعل الـ Quiz مجهول بالكامل لحماية الأداء في الجروبات الكبيرة
+        // وضع التخفي النشط والاحترافي لحماية الجروب
         await ctx.telegram.sendPoll(
-          targetId,
+          TARGET_CHAT_ID,
           `Q${sentCount + 1}) ${q.question}`,
           q.options,
           {
             type: 'quiz',
             correct_option_id: q.correct,
-            is_anonymous: true // وضع التخفي الاحترافي النشط حالا 🕵️‍♂️🔥
+            is_anonymous: true
           }
         );
 
@@ -74,7 +55,7 @@ async function handlePublish(ctx) {
           await new Promise(resolve => setTimeout(resolve, waitTime));
           
           await ctx.telegram.sendPoll(
-            targetId,
+            TARGET_CHAT_ID,
             `Q${sentCount + 1}) ${q.question}`,
             q.options,
             { type: 'quiz', correct_option_id: q.correct, is_anonymous: true }
@@ -87,12 +68,12 @@ async function handlePublish(ctx) {
 
     // رسالة النهاية الرسمية والصافية تماماً بدون أي حشو
     await ctx.telegram.sendMessage(
-      targetId,
+      TARGET_CHAT_ID,
       `✅ انتهت أسئلة محاضرة:\n\n${lectureTitle}`
     );
 
     // تأكيد الإتمام للأدمن في الخاص
-    return ctx.telegram.sendMessage(userId, `🚀 **تم ضخ ونشر الـ [ ${sentCount} سؤال ] بنجاح كامل وبوضع التخفي النظيف!**`);
+    return ctx.telegram.sendMessage(userId, `🚀 **تم ضخ ونشر الـ [ ${sentCount} سؤال ] بنجاح كامل على السيرفر وبوضع التخفي النظيف!**`);
 
   } catch (error) {
     console.error('❌ Publish Handler Mega Error:', error.message);

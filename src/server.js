@@ -1,26 +1,17 @@
 require('dotenv').config();
+const bot = require('./bot');
 
-// 🛡️ الـ Pre-Flight Architecture Protection: حماية البيئة قبل تشغيل البوت
-if (!process.env.BOT_TOKEN) {
-  console.error('💥 FATAL ERROR: BOT_TOKEN is missing in .env file!');
-  process.exit(1);
-}
+// تشغيل البوت مباشرة عبر الـ Long Polling المستقر
+bot.launch()
+  .then(() => {
+    console.log('\n====================================');
+    console.log('🚀 Quiz Platform Server is Live & Pure Cloud Mode Active!');
+    console.log('====================================\n');
+  })
+  .catch((err) => {
+    console.error('❌ Error starting Telegram Bot Server:', err.message);
+  });
 
-if (!process.env.ADMIN_ID) {
-  console.error('💥 FATAL ERROR: ADMIN_ID is missing in .env file!');
-  process.exit(1);
-}
-
-// تشغيل الـ Schema لضمان سلامة الداتابيز
-require('./database/schema');
-
-const bot = require('./bot/index');
-
-bot.launch().then(() => {
-  console.log('✔ Ultimate Simple Quiz Bot is online and ready safely! 🚀');
-}).catch((error) => {
-  console.error('💥 Fatal error launching the bot:', error.message);
-});
-
+// إيقاف آمن للسيرفر في حالة الطوارئ
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
