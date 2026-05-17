@@ -2,7 +2,6 @@ const { Telegraf } = require("telegraf");
 const fs = require("fs");
 const path = require("path");
 
-// 🎯 التصليح الفولاذي: فصل الاستدعاءات صح عشان الكود ميهنجش ولا يسقط رسايل
 const { handleUpload } = require("./handlers/upload");
 const { handlePublish, publishToGroup } = require("./handlers/publish");
 
@@ -11,20 +10,27 @@ const adminId = process.env.ADMIN_ID;
 
 const groupsFile = path.join(__dirname, "../../groups.json");
 
-// تحميل الجروبات
+// تحميل الجروبات كـ Object (Dictionary) لمنع التكرار نهائياً
 function loadGroups() {
   if (!fs.existsSync(groupsFile)) {
-    fs.writeFileSync(groupsFile, JSON.stringify([]));
+    fs.writeFileSync(groupsFile, JSON.stringify({}));
   }
-  return JSON.parse(fs.readFileSync(groupsFile));
+  try {
+    const data = fs.readFileSync(groupsFile, "utf8");
+    // تأمين لو الملف كان مصفوفة قديمة يحولها لـ Object فاضي
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? {} : parsed;
+  } catch (e) {
+    return {};
+  }
 }
 
-// حفظ الجروبات
+// حفظ الجروبات في ملف JSON
 function saveGroups(groups) {
   fs.writeFileSync(groupsFile, JSON.stringify(groups, null, 2));
 }
 
-// 🤖 حارس قنص الأهداف: بيسجل الخاص، الجروبات، والقنوات تلقائياً فوراً!
+// 🤖 حارس قنص الأهداف الذكي والمطور: يمنع التكرار عن طريق الـ ID كـ Key
 bot.on("message", async (ctx, next) => {
   try {
     const chat = ctx.chat;
@@ -37,21 +43,22 @@ bot.on("message", async (ctx, next) => {
         chat.type === "channel")
     ) {
       let groups = loadGroups();
-      const exists = groups.find((g) => g.id === chat.id);
+      const targetId = String(chat.id);
 
-      if (!exists) {
+      // 🎯 التعديل العبقري بتاعك: الحفظ بناءً على الـ ID كـ مفتاح فريد لمنع الـ Duplicate
+      if (!groups[targetId]) {
         const chatTitle = chat.type === "private" 
           ? `👤 الخاص الخاص بك (${chat.first_name || 'Admin'})` 
           : chat.title;
 
-        groups.push({
+        groups[targetId] = {
           id: chat.id,
           title: chatTitle,
           type: chat.type
-        });
+        };
 
         saveGroups(groups);
-        console.log(`✅ Saved New Target [${chat.type}]: ${chatTitle}`);
+        console.log(`✅ Saved New Target Object [${chat.type}]: ${chatTitle}`);
       }
     }
   } catch (err) {
@@ -79,11 +86,11 @@ bot.command("publish", async (ctx) => {
   return handlePublish(ctx);
 });
 
-// التقاط كليكة الزرار الشفاف وضخ الكويز للهدف المختار
-bot.action(/publish_(.+)/, async (ctx) => {
+// 🎯 التعديل الفولاذي: التقاط الضغط بدقة عبر الـ Regex المتغير لقفش الـ ID المخفي
+bot.action(/^publish_(.+)/, async (ctx) => {
   try {
     const groupId = ctx.match[1];
-    await ctx.answerCbQuery();
+    await ctx.answerCbQuery(); // مسح علامة التحميل الشفافة فوراً
     return publishToGroup(ctx, groupId);
   } catch (err) {
     console.log("❌ Action Error:", err.message);

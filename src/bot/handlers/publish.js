@@ -7,24 +7,32 @@ const groupsFile = path.join(__dirname, "../../../groups.json");
 
 function loadGroups() {
   if (!fs.existsSync(groupsFile)) {
-    return [];
+    return {};
   }
-  return JSON.parse(fs.readFileSync(groupsFile));
+  try {
+    const parsed = JSON.parse(fs.readFileSync(groupsFile, "utf8"));
+    return Array.isArray(parsed) ? {} : parsed;
+  } catch (e) {
+    return {};
+  }
 }
 
+// أمر /publish لبناء قائمة الأزرار الشفافة لايف
 async function handlePublish(ctx) {
   try {
-    const groups = loadGroups();
+    const groupsObject = loadGroups();
+    const groupsArray = Object.values(groupsObject); // تحويل الـ Object لـ Array فقط عند رص الأزرار
 
-    if (!groups.length) {
+    if (!groupsArray.length) {
       return ctx.reply("❌ لا توجد جروبات محفوظة");
     }
 
-    const buttons = groups.map((group) => {
+    // 🔘 إنشاء الأزرار: الاسم ظاهر + الـ ID مخفي داخلياً بالملي لمنع لخبطة الأندرويد
+    const buttons = groupsArray.map((group) => {
       return [
         Markup.button.callback(
           `${group.title} (${group.type === 'private' ? 'خاص 👤' : 'عام 📢'})`,
-          `publish_${group.id}`
+          `publish_${group.id}` // الـ ID محمي ومخفي جوه الـ Callback Data
         )
       ];
     });
@@ -40,6 +48,7 @@ async function handlePublish(ctx) {
   }
 }
 
+// تنفيذ عملية الضخ بعد لقط الـ ID الصافي من الـ Regex
 async function publishToGroup(ctx, groupId) {
   try {
     const userId = ctx.from.id;
@@ -49,10 +58,8 @@ async function publishToGroup(ctx, groupId) {
       return ctx.reply("❌ ارفع ملف الأسئلة أولاً");
     }
 
-    const groups = loadGroups();
-    const target = groups.find(
-      (g) => String(g.id) === String(groupId)
-    );
+    const groupsObject = loadGroups();
+    const target = groupsObject[String(groupId)]; // سحب الهدف فوراً بـ الكي (O(1) Speed) بدون لف ودوران
 
     if (!target) {
       return ctx.reply("❌ الهدف المختار غير موجود في القائمة");
@@ -60,11 +67,12 @@ async function publishToGroup(ctx, groupId) {
 
     const { lectureName, questions } = quizData;
 
-    // 🎯 1️⃣ رسالة: جاري النشر الفورية للأدمن في الخاص
+    // رسالة: جاري النشر الفورية للأدمن في الخاص
     await ctx.reply(
       `🚀 جاري نشر محاضرة:\n\n📚 ${lectureName}\n\n⏳ انتظر حتى اكتمال النشر...`
     );
 
+    // رسالة بداية الكويز في الهدف المستهدف
     await ctx.telegram.sendMessage(
       target.id,
       `📚 ${lectureName}`
@@ -113,7 +121,7 @@ async function publishToGroup(ctx, groupId) {
       `✅ انتهت أسئلة ${lectureName}`
     );
 
-    // 🎯 2️⃣ رسالة عند انتهاء النشر مفصلة للأدمن
+    // رسالة عند انتهاء النشر مفصلة للأدمن
     return ctx.reply(
       `✅ اكتمل نشر محاضرة:\n\n📚 ${lectureName}\n\n🎯 عدد الأسئلة: ${questions.length}`
     );
