@@ -7,6 +7,7 @@
     "start": "node src/server.js"
   },
   "dependencies": {
+    "better-sqlite3": "^12.10.0",
     "dotenv": "^17.4.2"
   }
 }
