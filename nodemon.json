@@ -1,0 +1,8 @@
+{
+  "ignore": [
+    "*.json",
+    "polls.json",
+    "scores.json",
+    "groups.json"
+  ]
+}
