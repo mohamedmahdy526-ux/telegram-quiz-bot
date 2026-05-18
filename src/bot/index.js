@@ -10,14 +10,13 @@ const adminId = process.env.ADMIN_ID;
 
 const groupsFile = path.join(__dirname, "../../groups.json");
 
-// تحميل الجروبات كـ Object (Dictionary) لمنع التكرار نهائياً
+// تحميل الجروبات كـ Object (Dictionary)
 function loadGroups() {
   if (!fs.existsSync(groupsFile)) {
     fs.writeFileSync(groupsFile, JSON.stringify({}));
   }
   try {
     const data = fs.readFileSync(groupsFile, "utf8");
-    // تأمين لو الملف كان مصفوفة قديمة يحولها لـ Object فاضي
     const parsed = JSON.parse(data);
     return Array.isArray(parsed) ? {} : parsed;
   } catch (e) {
@@ -25,12 +24,12 @@ function loadGroups() {
   }
 }
 
-// حفظ الجروبات في ملف JSON
+// حفظ الجروبات
 function saveGroups(groups) {
   fs.writeFileSync(groupsFile, JSON.stringify(groups, null, 2));
 }
 
-// 🤖 حارس قنص الأهداف الذكي والمطور: يمنع التكرار عن طريق الـ ID كـ Key
+// 🤖 حارس قنص الأهداف التلقائي
 bot.on("message", async (ctx, next) => {
   try {
     const chat = ctx.chat;
@@ -45,7 +44,6 @@ bot.on("message", async (ctx, next) => {
       let groups = loadGroups();
       const targetId = String(chat.id);
 
-      // 🎯 التعديل العبقري بتاعك: الحفظ بناءً على الـ ID كـ مفتاح فريد لمنع الـ Duplicate
       if (!groups[targetId]) {
         const chatTitle = chat.type === "private" 
           ? `👤 الخاص الخاص بك (${chat.first_name || 'Admin'})` 
@@ -86,12 +84,20 @@ bot.command("publish", async (ctx) => {
   return handlePublish(ctx);
 });
 
-// 🎯 التعديل الفولاذي: التقاط الضغط بدقة عبر الـ Regex المتغير لقفش الـ ID المخفي
+// 🎯 التعديل الذهبي لإنهاء الـ Timeout: الرد الفوري وتشغيل الضخ بالخلفية
 bot.action(/^publish_(.+)/, async (ctx) => {
   try {
     const groupId = ctx.match[1];
-    await ctx.answerCbQuery(); // مسح علامة التحميل الشفافة فوراً
-    return publishToGroup(ctx, groupId);
+    
+    // 1. اقفل علامة التحميل الشفافة في تليجرام فوراً لمنع الـ Timeout
+    await ctx.answerCbQuery(); 
+
+    // 2. رد على الأدمن فوراً وثبّت الأداء في الشات الخاص
+    await ctx.reply("🚀 بدأ النشر وتوليد الكويزات في الخلفية بنجاح... يمكنك متابعة الجروب الآن 😎🔥");
+
+    // 3. طيّر عملية النشر في الخلفية (بدون return وبدون await للـ function ككل لعدم التعطيل)
+    publishToGroup(ctx, groupId);
+
   } catch (err) {
     console.log("❌ Action Error:", err.message);
   }
