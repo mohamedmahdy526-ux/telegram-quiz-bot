@@ -3,13 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { handleUpload } = require("./handlers/upload");
-const { handlePublish, publishToGroup } = require("./handlers/publish");
-
-// التأكد من وجود التوكن في البيئة المحيطة لمنع الكراش
-if (!process.env.BOT_TOKEN) {
-  console.error("❌ CRITICAL: BOT_TOKEN is missing in .env file!");
-  process.exit(1);
-}
+const { handlePublish, preparePublishMenu, startMassPublishing } = require("./handlers/publish");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const adminId = process.env.ADMIN_ID;
@@ -27,10 +21,18 @@ function saveData(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-// 🤖 حارس قنص الأهداف والجروبات التلقائي لو تليجرام تفاعل معاها
+// 🤖 حارس لقط رسائل نص الـ Intro + حفظ المجموعات تلقائياً
 bot.on("message", async (ctx, next) => {
   try {
     const chat = ctx.chat;
+    const userId = String(ctx.from?.id);
+
+    if (chat.type === "private" && global.waitingForSubject && global.waitingForSubject[userId] && ctx.message.text) {
+      const subjectName = ctx.message.text.trim();
+      startMassPublishing(ctx, userId, subjectName);
+      return; 
+    }
+
     if (chat && (chat.type === "group" || chat.type === "supergroup" || chat.type === "channel")) {
       let groups = loadData(groupsFile);
       if (!groups[String(chat.id)]) {
@@ -42,10 +44,9 @@ bot.on("message", async (ctx, next) => {
   return next();
 });
 
-// معالجة تشغيل البوت وجلب النتيجة المصفاة بدون مارك داون معقد
+// معالجة تشغيل البوت وعرض تقرير النتيجة الأكاديمي بالحسابات الرياضية المظبوطة بالملي 🎯
 bot.start(async (ctx) => {
   if (ctx.chat.type !== "private") return;
-  
   const startPayload = ctx.payload;
   
   if (startPayload && startPayload.startsWith("result_")) {
@@ -55,51 +56,78 @@ bot.start(async (ctx) => {
     const userKey = `${userId}_${targetLecture}`;
 
     if (!scores[userKey]) {
-      return ctx.reply(`❌ عذراً! لم يتم العثور على أي إجابات مسجلة لك في محاضرة:\n📚 ${targetLecture}\n\nتأكد أنك قمت بحل الأسئلة وجاوبت على الـ Polls بالفعل!`, { parse_mode: undefined });
+      return ctx.reply(`❌ عذراً! لم يتم العثور على أي إجابات مسجلة لك في محاضرة:\n📚 ${targetLecture}`, { parse_mode: undefined });
     }
 
     const { correct, wrong, total } = scores[userKey];
-    const percentage = Math.round((correct / total) * 100);
+    
+    // 🧮 الحسبة الذكية النظيفة: إجمالي الأسئلة المحلولة بيساوي مجموعهم الفعلي دايماً
+    const totalAnswered = correct + wrong;
+    
+    // تأمين الـ Total الحقيقي: لو الـ total المخزن مش موجود أو صفر، بنخليه الإجمالي المحلول كخط دفاع
+    const finalTotal = (total && total > 0) ? total : totalAnswered;
+    
+    // 🎯 حساب النسبة المئوية الصحيحة بالملي (الصح على إجمالي أسئلة المحاضرة الكلي)
+    const percentage = finalTotal > 0 ? Math.round((correct / finalTotal) * 100) : 0;
 
     let rating = "⚠️ تحتاج لمزيد من المذاكرة";
-    if (percentage >= 90) rating = "🔥 ممتاز جداً (بروفيسور) ✨";
-    else if (percentage >= 80) rating = "🌟 جيد جداً (رائع)";
-    else if (percentage >= 70) rating = "👍 جيد (مستوى مبشر)";
-    else if (percentage >= 50) rating = "📈 مقبول (شد حيلك)";
+    if (percentage >= 90) rating = "ممتاز جداً (بروفيسور) ✨";
+    else if (percentage >= 80) rating = "جيد جداً (رائع)";
+    else if (percentage >= 70) rating = "جيد (مستوى مبشر)";
+    else if (percentage >= 50) rating = "مقبول (شد حيلك)";
 
-    const resultText = `📊 تقرير نتيجتك الأكاديمية:\n\n📚 المحاضرة: ${targetLecture}\n\n✅ الإجابات الصحيحة: ${correct}\n❌ الإجابات الخاطئة: ${wrong}\n📝 إجمالي الأسئلة المحلولة: ${correct + wrong}/${total}\n\n📊 النسبة المئوية: ${percentage}%\n🎯 التقييم العام: ${rating}\n\nشكراً لك ومزيد من التوفيق والنجاح! 🩺🎓`;
+    // طباعة التقرير بالصياغة الرسمية المتستفة والنصوص الرياضية الحقيقية 10/10 دايماً
+    const resultText = 
+      `📊 تقرير نتيجتك الأكاديمية:\n\n` +
+      `📚 المحاضرة: ${targetLecture}\n\n` +
+      `✅ الإجابات الصحيحة: ${correct}\n` +
+      `❌ الإجابات الخاطئة: ${wrong}\n` +
+      `📝 إجمالي الأسئلة المحلولة: ${totalAnswered}/${finalTotal}\n\n` +
+      `📊 النسبة المئوية: ${percentage}%\n` +
+      `🎯 التقييم العام: ${rating}\n\n` +
+      `شكراً لك ومزيد من التوفيق والنجاح! 🩺🎓`;
 
     return ctx.reply(resultText, { parse_mode: undefined });
   }
-
-  ctx.reply("🚀 أهلاً بك في نظام الكويزات الأكاديمي! البوت مستعد الآن لرصد وحفظ نتائجك فوراً وبشكل تلقائي بعد تفعيل مستشعرات تليجرام العميقة 😎.", { parse_mode: undefined });
+  ctx.reply("🚀 أهلاً بك في نظام الكويزات الأكاديمي! البوت مستعد الآن لرصد وحفظ نتائجك فوراً وبشكل تلقائي.", { parse_mode: undefined });
 });
 
-// 🎯 مراقبة وتحليل إجابات الطلاب لايف في الخلفية بعد فتح الـ Allowed Updates
+// 🎯 مراقبة إجابات الطلاب وحظر التغيير والتكرار التكتيكي (Anti-Cheat Engine)
 bot.on("poll_answer", async (ctx) => {
   try {
-    // الـ Log الذهبي للتأكد من وصول الإشارة لايف جوه الـ Terminal
     console.log("🔥 POLL ANSWER RECEIVED LAUNCHED!");
-
     const answer = ctx.pollAnswer;
     const pollId = String(answer.poll_id);
     const userId = String(answer.user.id);
     
     const polls = loadData(pollsFile);
     const pollData = polls[pollId];
+    if (!pollData) return;
 
-    if (!pollData) {
-      console.log(`⚠️ Ignored poll answer for unmapped poll ID: ${pollId}`);
-      return;
-    }
-
+    // لقط البيانات المكتوبة من ملف الـ Polls بالملي
     const { lecture, correct, total } = pollData;
     const userKey = `${userId}_${lecture}`;
     
     let scores = loadData(scoresFile);
+    
     if (!scores[userKey]) {
-      scores[userKey] = { correct: 0, wrong: 0, total: total };
+      scores[userKey] = { 
+        correct: 0, 
+        wrong: 0, 
+        total: Number(total || 0), // تحويل وتثبيت الرقم الإجمالي الكلي للمحاضرة
+        answeredPolls: {} 
+      };
     }
+
+    // حارس منع تكرار أو تعديل الإجابة
+    if (scores[userKey].answeredPolls && scores[userKey].answeredPolls[pollId]) {
+      console.log(`⚠️ Blocked duplicate vote attempt from Student: ${userId} on Poll: ${pollId}`);
+      return;
+    }
+
+    // قفل السؤال الحالي باسم الطالب
+    if (!scores[userKey].answeredPolls) scores[userKey].answeredPolls = {};
+    scores[userKey].answeredPolls[pollId] = true;
 
     const studentChoice = answer.option_ids[0];
     if (studentChoice === correct) {
@@ -109,10 +137,9 @@ bot.on("poll_answer", async (ctx) => {
     }
 
     saveData(scoresFile, scores);
-    console.log(`📝 [Score Saved Successfully] -> Student: ${userId} | Lecture: ${lecture} | Correct: ${scores[userKey].correct} | Wrong: ${scores[userKey].wrong}`);
-
+    console.log(`📝 [Clean Score Saved] -> Student: ${userId} | Lecture: ${lecture} | Correct: ${scores[userKey].correct} | Wrong: ${scores[userKey].wrong}`);
   } catch (err) {
-    console.log("❌ Poll Answer Processing Error:", err.message);
+    console.log("❌ Poll Answer Error Caught:", err.message);
   }
 });
 
@@ -129,11 +156,9 @@ bot.command("publish", async (ctx) => {
 bot.action(/^publish_(.+)/, async (ctx) => {
   try {
     const groupId = ctx.match[1];
-    await ctx.answerCbQuery(); 
-    await ctx.reply("🚀 بدأ النشر وتوليد الكويزات في الخلفية بنجاح... ونظام الدرجات والنتائج نشط للطلاب الآن 😎🔥", { parse_mode: undefined });
-    publishToGroup(ctx, groupId);
+    await ctx.answerCbQuery();
+    return preparePublishMenu(ctx, groupId);
   } catch (err) {}
 });
 
-// تصدير كائن البوت صافي وبدون سطر الـ launch الخبيث من هنا 🎯
 module.exports = bot;

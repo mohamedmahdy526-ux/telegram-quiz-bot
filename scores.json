@@ -1,12 +1,14 @@
 {
-  "437169371_Health promotion -": {
-    "correct": 5,
-    "wrong": 0,
-    "total": 5
-  },
-  "7270149102_Health promotion -": {
-    "correct": 2,
-    "wrong": 3,
-    "total": 5
+  "437169371_Health promotion 1": {
+    "correct": 1,
+    "wrong": 4,
+    "total": 5,
+    "answeredPolls": {
+      "5789593847466035368": true,
+      "5789593847466035369": true,
+      "5789593847466035370": true,
+      "5789593847466035371": true,
+      "5789593847466035372": true
+    }
   }
 }
