@@ -27,7 +27,6 @@ bot.on("message", async (ctx, next) => {
     const chat = ctx.chat;
     const userId = String(ctx.from?.id);
 
-    // 🎯 استقبال اسم المادة وتوجيهه للمحرك فوراً
     if (chat.type === "private" && global.waitingForSubject && global.waitingForSubject[userId] && ctx.message.text) {
       const subjectName = ctx.message.text.trim();
       startMassPublishing(ctx, userId, subjectName);
@@ -51,24 +50,21 @@ bot.start(async (ctx) => {
   const startPayload = ctx.payload;
   
   if (startPayload && startPayload.startsWith("result_")) {
-    const targetLecture = startPayload.replace("result_", "").replace(/_/g, " ");
+    // 🎯 تطهير فوري لاسم المحاضرة القادم من الرابط وتحويل الشرطات لمسافات للمطابقة الصارمة
+    const targetLecture = startPayload.replace("result_", "").replace(/_/g, " ").trim();
+    
     const scores = loadData(scoresFile);
     const userId = String(ctx.from.id);
     const userKey = `${userId}_${targetLecture}`;
 
     if (!scores[userKey]) {
-      return ctx.reply(`❌ عذراً! لم يتم العثور على أي إجابات مسجلة لك في محاضرة:\n📚 ${targetLecture}`, { parse_mode: undefined });
+      return ctx.reply(`❌ عذراً! لم يتم العثور على أي إجابات مسجلة لك في محاضرة:\n📚 ${targetLecture}\n\nتأكد أنك قمت بحل الأسئلة بالكامل!`, { parse_mode: undefined });
     }
 
     const { correct, wrong, total } = scores[userKey];
     
-    // 🧮 الحسبة الذكية النظيفة: إجمالي الأسئلة المحلولة بيساوي مجموعهم الفعلي دايماً
     const totalAnswered = correct + wrong;
-    
-    // تأمين الـ Total الحقيقي منعا للـ Division by zero
     const finalTotal = (total && total > 0) ? total : totalAnswered;
-    
-    // 🎯 حساب النسبة المئوية الصحيحة بالملي
     const percentage = finalTotal > 0 ? Math.round((correct / finalTotal) * 100) : 0;
 
     let rating = "⚠️ تحتاج لمزيد من المذاكرة";
@@ -77,7 +73,6 @@ bot.start(async (ctx) => {
     else if (percentage >= 70) rating = "جيد (مستوى مبشر)";
     else if (percentage >= 50) rating = "مقبول (شد حيلك)";
 
-    // طباعة التقرير بالصياغة الرسمية المتستفة والنصوص الرياضية الحقيقية دايماً
     const resultText = 
       `📊 تقرير نتيجتك الأكاديمية:\n\n` +
       `📚 المحاضرة: ${targetLecture}\n\n` +
@@ -105,9 +100,11 @@ bot.on("poll_answer", async (ctx) => {
     const pollData = polls[pollId];
     if (!pollData) return;
 
-    const { lecture, correct, total } = pollData;
-    const userKey = `${userId}_${lecture}`;
+    // لقط اسم المحاضرة وتطهيره من أي مسافات زائدة لتوحيد الـ Key دايماً
+    const lectureClean = String(pollData.lecture).replace(/_/g, " ").trim();
+    const { correct, total } = pollData;
     
+    const userKey = `${userId}_${lectureClean}`;
     let scores = loadData(scoresFile);
     
     if (!scores[userKey]) {
@@ -136,7 +133,7 @@ bot.on("poll_answer", async (ctx) => {
     }
 
     saveData(scoresFile, scores);
-    console.log(`📝 [Clean Score Saved] -> Student: ${userId} | Lecture: ${lecture} | Correct: ${scores[userKey].correct} | Wrong: ${scores[userKey].wrong}`);
+    console.log(`📝 [Clean Score Saved] -> Student: ${userId} | Lecture: ${lectureClean} | Correct: ${scores[userKey].correct} | Wrong: ${scores[userKey].wrong}`);
   } catch (err) {
     console.log("❌ Poll Answer Error Caught:", err.message);
   }
@@ -152,12 +149,11 @@ bot.command("publish", async (ctx) => {
   return handlePublish(ctx);
 });
 
-// 🎯 هنا قفل اللعبة: توجيه كليكة اختيار الجروب لمنيو طلب اسم المادة فوراً!
 bot.action(/^publish_(.+)/, async (ctx) => {
   try {
     const groupId = ctx.match[1];
     await ctx.answerCbQuery();
-    return preparePublishMenu(ctx, groupId); // فتح منيو طلب اسم المادة
+    return preparePublishMenu(ctx, groupId); 
   } catch (err) {}
 });
 
