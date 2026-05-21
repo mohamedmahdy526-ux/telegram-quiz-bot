@@ -163,8 +163,7 @@ async function startMassPublishing(ctx, userId, subjectName) {
           { 
             type: "quiz", 
             correct_option_id: shuffledQ.correct, 
-            is_anonymous: false,
-            open_period: 45 // مؤقت تنازلي 45 ثانية تلقائي لحفظ التنافس والعدالة
+            is_anonymous: false
           }
         );
 
