@@ -251,51 +251,76 @@ bot.action(/^publish_(.+)/, async (ctx) => {
   } catch (err) {}
 });
 
-// 🧠 استدعاء خادم Gemini AI بأسلوب أصيل وخفيف دون أي مكتبات خارجية ثقيلة
+// 🧠 استدعاء خادم Gemini AI بأسلوب أصيل وخفيف دون أي مكتبات خارجية ثقيلة مع نظام تنقل احتياطي للموديلات
 function callGeminiAPI(apiKey, prompt) {
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: prompt }
-          ]
-        }
-      ]
-    });
+  const models = [
+    "gemini-2.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash"
+  ];
 
-    const options = {
-      hostname: 'generativelanguage.googleapis.com',
-      port: 443,
-      path: `/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(data)
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let body = '';
-      res.on('data', (chunk) => body += chunk);
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(body);
-          if (parsed && parsed.candidates && parsed.candidates[0] && parsed.candidates[0].content && parsed.candidates[0].content.parts[0]) {
-            resolve(parsed.candidates[0].content.parts[0].text);
-          } else {
-            console.log("⚠️ Invalid Gemini Response:", body);
-            reject(new Error("موقع استجابة Gemini غير صالح أو منتهي الصلاحية"));
+  const makeRequest = (modelName) => {
+    return new Promise((resolve, reject) => {
+      const data = JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: prompt }
+            ]
           }
-        } catch (e) {
-          reject(e);
-        }
+        ]
       });
-    });
 
-    req.on('error', (e) => reject(e));
-    req.write(data);
-    req.end();
+      const options = {
+        hostname: 'generativelanguage.googleapis.com',
+        port: 443,
+        path: `/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(data)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let body = '';
+        res.on('data', (chunk) => body += chunk);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(body);
+            if (parsed && parsed.candidates && parsed.candidates[0] && parsed.candidates[0].content && parsed.candidates[0].content.parts[0]) {
+              resolve(parsed.candidates[0].content.parts[0].text);
+            } else {
+              reject(new Error(body));
+            }
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+
+      req.on('error', (e) => reject(e));
+      req.write(data);
+      req.end();
+    });
+  };
+
+  return new Promise(async (resolve, reject) => {
+    let lastError = null;
+    for (const model of models) {
+      try {
+        console.log(`🧠 Attempting Gemini call with model: ${model}...`);
+        const result = await makeRequest(model);
+        console.log(`🎉 Gemini success with model: ${model}`);
+        return resolve(result);
+      } catch (err) {
+        lastError = err;
+        console.log(`❌ Model ${model} failed:`, err.message.substring(0, 150));
+      }
+    }
+    reject(lastError || new Error("Failed to contact any Gemini models"));
   });
 }
 
@@ -384,13 +409,28 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join("\n")}
     try {
       const aiExplanation = await callGeminiAPI(apiKey, prompt);
       
-      if (aiExplanation.length > 4000) {
-        for (let i = 0; i < aiExplanation.length; i += 4000) {
-          await ctx.reply(aiExplanation.substring(i, i + 4000), { parse_mode: "Markdown" });
+      const sendReply = async (text) => {
+        try {
+          if (text.length > 4000) {
+            for (let i = 0; i < text.length; i += 4000) {
+              await ctx.reply(text.substring(i, i + 4000), { parse_mode: "Markdown" });
+            }
+          } else {
+            await ctx.reply(text, { parse_mode: "Markdown" });
+          }
+        } catch (markdownErr) {
+          console.log("⚠️ Markdown parse failed, retrying without parsing:", markdownErr.message);
+          if (text.length > 4000) {
+            for (let i = 0; i < text.length; i += 4000) {
+              await ctx.reply(text.substring(i, i + 4000));
+            }
+          } else {
+            await ctx.reply(text);
+          }
         }
-      } else {
-        await ctx.reply(aiExplanation, { parse_mode: "Markdown" });
-      }
+      };
+
+      await sendReply(aiExplanation);
     } catch (apiErr) {
       console.log("❌ Gemini API HTTPS Error:", apiErr.message);
       return ctx.reply("❌ عذراً، حدث خطأ أثناء الاتصال بخادم الذكاء الاصطناعي Gemini. يرجى المحاولة لاحقاً!");
