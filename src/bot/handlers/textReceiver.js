@@ -88,29 +88,48 @@ async function handleIncomingTextAndFiles(ctx) {
     }
 
     // ==========================================
-    // 4. استقبال ملف أسئلة الكويز (.txt)
+    // 4. استقبال ملف أسئلة الكويز (.txt) أو نص مباشر
     // ==========================================
     if (session.step === 'waiting_quiz') {
       const file = ctx.message.document;
-      if (!file || !file.file_name.endsWith('.txt')) {
+      const textMsg = ctx.message.text;
+
+      if (!file && !textMsg) {
+        return ctx.reply('❌ يرجى رفع ملف أسئلة (.txt) أو كتابة الأسئلة كنص مباشر في الشات.');
+      }
+
+      if (file && !file.file_name.endsWith('.txt')) {
         return ctx.reply('❌ يرجى رفع ملف أسئلة بصيغة \`.txt\` المعتمدة فقط.');
       }
 
       try {
-        await ctx.reply('⏳ جاري تحميل وفك تشفير الأسئلة... انتظر ثوانٍ معدودة.');
+        await ctx.reply('⏳ جاري فك تشفير الأسئلة... انتظر ثوانٍ معدودة.');
         
-        const fileLink = await ctx.telegram.getFileLink(file.file_id);
-        const response = await fetch(fileLink.href);
-        const text = await response.text();
+        let text = '';
+        let quizTitle = '';
+
+        if (file) {
+          const fileLink = await ctx.telegram.getFileLink(file.file_id);
+          const response = await fetch(fileLink.href);
+          text = await response.text();
+          quizTitle = file.file_name.replace('.txt', '').replace(/- Copy(\s*\(\d+\))?/gi, '').trim();
+        } else {
+          text = textMsg;
+          const firstLine = text.split('\n')[0].trim();
+          // استخراج العنوان إذا بدأ بـ (اسم الكويز: ...) أو (عنوان الكويز: ...) أو (Title: ...)
+          if (/^(عنوان الكويز|اسم الكويز|الكويز|Title)\s*:\s*(.+)/i.test(firstLine)) {
+            quizTitle = firstLine.match(/^(عنوان الكويز|اسم الكويز|الكويز|Title)\s*:\s*(.+)/i)[2].trim();
+          } else {
+            quizTitle = `كويز نصي - ${new Date().toLocaleDateString('ar-EG')}`;
+          }
+        }
         
         // تفكيك بنك الأسئلة من النص
         const questions = parseQuestions(text);
 
         if (!questions || questions.length === 0) {
-          return ctx.reply('❌ فشل تفكيك الأسئلة. تأكد أن صياغة الملف تطابق التنسيق المطلوب (سؤال ثم الخيارات A, B, C ثم Answer: ).');
+          return ctx.reply('❌ فشل تفكيك الأسئلة. تأكد أن صياغة النص تطابق التنسيق المطلوب (سؤال ثم الاختيارات A, B, C ثم Answer: ).');
         }
-
-        const quizTitle = file.file_name.replace('.txt', '').replace(/- Copy(\s*\(\d+\))?/gi, '').trim();
 
         // 1. إنشاء نود الكويز في شجرة المنصة
         const result = db.prepare(`
