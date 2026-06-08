@@ -1,4 +1,5 @@
 const { parseQuestions } = require('../../utils/parser');
+const { parseQuizWithAI } = require('../../utils/aiParser');
 const { saveQuestions } = require('../../utils/storage');
 const { cleanText } = require('../../utils/formatter'); // استدعاء حارس التطهير التلقائي
 
@@ -8,25 +9,39 @@ async function handleUpload(ctx) {
     const fileName = ctx.message.document.file_name;
     const userId = ctx.from.id;
 
-    // تطهير امتداد الملف وزوائد الـ Copy الخاصة بالويندوز لايف
+    const fileExtension = fileName.split('.').pop().toLowerCase();
+
+    if (!['txt', 'pdf', 'docx'].includes(fileExtension)) {
+      return ctx.reply('❌ نوع الملف غير مدعوم. يرجى رفع ملف بصيغة .txt أو .pdf أو .docx فقط.');
+    }
+
+    // تطهير اسم المحاضرة من الامتدادات وزوائد النسخ
     const lectureTitle = fileName
-      .replace('.txt', '')
+      .replace(/\.(txt|pdf|docx)$/i, '')
       .replace(/- Copy(\s*\(\d+\))?/gi, '')
       .trim();
 
-    // جلب الرابط المباشر من سيرفرات تليجرام وقراءته فوراً كـ Text
+    await ctx.reply('⏳ جاري تحميل وقراءة محتوى الملف... انتظر ثوانٍ معدودة.');
+
+    // جلب الرابط المباشر من سيرفرات تليجرام وقراءته
     const fileLink = await ctx.telegram.getFileLink(fileId);
     const response = await fetch(fileLink.href);
-    let textContent = await response.text();
+    const fileBuffer = Buffer.from(await response.arrayBuffer());
 
-    // 🎯 الـ Auto Formatter: تطهير وتصليح صيغة الملف تلقائياً قبل الـ Parsing
-    textContent = cleanText(textContent);
+    let questions = [];
 
-    // تفكيك واستخراج مصفوفة الأسئلة من النص المغسول
-    const questions = parseQuestions(textContent);
+    if (fileExtension === 'txt') {
+      let textContent = fileBuffer.toString('utf8');
+      textContent = cleanText(textContent);
+      questions = parseQuestions(textContent);
+    } else {
+      // استخدام الذكاء الاصطناعي للملفات الأخرى (pdf, docx)
+      const apiKey = process.env.GEMINI_API_KEY;
+      questions = await parseQuizWithAI(fileBuffer, fileExtension, apiKey);
+    }
 
     // التحقق الصارم والرد المباشر لو الـ Format مش تمام
-    if (!questions.length) {
+    if (!questions || !questions.length) {
       return ctx.reply(
         '❌ فشل استخراج الأسئلة.. تأكد من صياغة بنك الأسئلة داخل الملف والـ Format المطلوب.'
       );
@@ -44,7 +59,7 @@ async function handleUpload(ctx) {
 
     // رد البوت الرسمي والنظيف وتأكيد استخراج الأسئلة للأدمن
     await ctx.reply(
-      `✅**تم استخراج وقفل أسئلة المحاضرة بنجاح!**\n\n` +
+      `✅ **تم استخراج وقفل أسئلة المحاضرة بنجاح عبر ${fileExtension === 'txt' ? 'النظام التقليدي' : 'الذكاء الاصطناعي'}!**\n\n` +
       `📚 المحاضرة:\n${lectureTitle}\n\n` +
       `📊 عدد الأسئلة:\n[ ${questions.length} سؤال ]\n\n` +
       `📤 اكتب الآن:\n/publish\n\n` +
@@ -56,7 +71,7 @@ async function handleUpload(ctx) {
 
   } catch (error) {
     console.error('❌ Upload Handler Error:', error.message);
-    ctx.reply('❌ حدث خطأ أثناء معالجة وقراءة ملف الأسئلة.');
+    ctx.reply(`❌ حدث خطأ أثناء معالجة وقراءة ملف الأسئلة: ${error.message}`);
   }
 }
 

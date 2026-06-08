@@ -88,29 +88,44 @@ async function handleIncomingTextAndFiles(ctx) {
     }
 
     // ==========================================
-    // 4. استقبال ملف أسئلة الكويز (.txt)
+    // 4. استقبال ملف أسئلة الكويز (.txt / .pdf / .docx)
     // ==========================================
     if (session.step === 'waiting_quiz') {
       const file = ctx.message.document;
-      if (!file || !file.file_name.endsWith('.txt')) {
-        return ctx.reply('❌ يرجى رفع ملف أسئلة بصيغة \`.txt\` المعتمدة فقط.');
+      if (!file) {
+        return ctx.reply('❌ يرجى رفع ملف الأسئلة المطلوب.');
+      }
+
+      const fileName = file.file_name;
+      const fileExtension = fileName.split('.').pop().toLowerCase();
+
+      if (!['txt', 'pdf', 'docx'].includes(fileExtension)) {
+        return ctx.reply('❌ يرجى رفع ملف أسئلة بصيغة .txt أو .pdf أو .docx فقط.');
       }
 
       try {
-        await ctx.reply('⏳ جاري تحميل وفك تشفير الأسئلة... انتظر ثوانٍ معدودة.');
+        await ctx.reply('⏳ جاري تحميل وقراءة محتوى الملف... انتظر ثوانٍ معدودة.');
         
         const fileLink = await ctx.telegram.getFileLink(file.file_id);
         const response = await fetch(fileLink.href);
-        const text = await response.text();
+        const fileBuffer = Buffer.from(await response.arrayBuffer());
         
-        // تفكيك بنك الأسئلة من النص
-        const questions = parseQuestions(text);
+        let questions = [];
 
-        if (!questions || questions.length === 0) {
-          return ctx.reply('❌ فشل تفكيك الأسئلة. تأكد أن صياغة الملف تطابق التنسيق المطلوب (سؤال ثم الخيارات A, B, C ثم Answer: ).');
+        if (fileExtension === 'txt') {
+          const text = fileBuffer.toString('utf8');
+          questions = parseQuestions(text);
+        } else {
+          const { parseQuizWithAI } = require('../../utils/aiParser');
+          const apiKey = process.env.GEMINI_API_KEY;
+          questions = await parseQuizWithAI(fileBuffer, fileExtension, apiKey);
         }
 
-        const quizTitle = file.file_name.replace('.txt', '').replace(/- Copy(\s*\(\d+\))?/gi, '').trim();
+        if (!questions || questions.length === 0) {
+          return ctx.reply('❌ فشل تفكيك الأسئلة. تأكد أن صياغة الملف تطابق التنسيق المطلوب.');
+        }
+
+        const quizTitle = fileName.replace(/\.(txt|pdf|docx)$/i, '').replace(/- Copy(\s*\(\d+\))?/gi, '').trim();
 
         // 1. إنشاء نود الكويز في شجرة المنصة
         const result = db.prepare(`
@@ -136,7 +151,7 @@ async function handleIncomingTextAndFiles(ctx) {
         });
 
         await ctx.reply(
-          `🎉 **تم إنشاء وتوليد الكويز بنجاح!**\n\n` +
+          `🎉 **تم إنشاء وتوليد الكويز بنجاح عبر ${fileExtension === 'txt' ? 'النظام التقليدي' : 'الذكاء الاصطناعي'}!**\n\n` +
           `📝 العنوان: [ ${quizTitle} ]\n` +
           `📊 إجمالي الأسئلة المستخرجة: [ ${questions.length} سؤال ]\n\n` +
           `تم حفظ الكويز في شجرة المواد بنجاح ويمكن للطلاب حله مباشرة داخل البوت الآن! 🧠✨`
@@ -146,7 +161,7 @@ async function handleIncomingTextAndFiles(ctx) {
 
       } catch (err) {
         console.error('❌ Error parsing quiz in node:', err.message);
-        ctx.reply('❌ حدث خطأ غير متوقع أثناء معالجة وحفظ الكويز.');
+        ctx.reply(`❌ حدث خطأ غير متوقع أثناء معالجة وحفظ الكويز: ${err.message}`);
       }
     }
 
