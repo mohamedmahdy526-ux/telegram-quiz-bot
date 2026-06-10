@@ -197,9 +197,11 @@ bot.on("message", async (ctx, next) => {
               );
 
               let count = 0;
+              let lastCorrectIndex = -1;
               for (let originalQuestion of quizData.questions) {
                 try {
-                  const shuffledQ = shuffleQuestion(originalQuestion);
+                  const shuffledQ = shuffleQuestion(originalQuestion, lastCorrectIndex);
+                  lastCorrectIndex = shuffledQ.correct;
                   const pollMessage = await ctx.telegram.sendPoll(
                     ctx.chat.id,
                     `Q${count + 1}) ${shuffledQ.question}`,
@@ -1009,9 +1011,11 @@ bot.action(/^start_quiz_node_(.+)/, async (ctx) => {
     );
 
     let count = 0;
+    let lastCorrectIndex = -1;
     for (let originalQuestion of quizData.questions) {
       try {
-        const shuffledQ = shuffleQuestion(originalQuestion);
+        const shuffledQ = shuffleQuestion(originalQuestion, lastCorrectIndex);
+        lastCorrectIndex = shuffledQ.correct;
         const pollMessage = await ctx.telegram.sendPoll(
           ctx.chat.id,
           `Q${count + 1}) ${shuffledQ.question}`,

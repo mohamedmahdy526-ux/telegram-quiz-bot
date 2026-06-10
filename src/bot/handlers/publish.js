@@ -29,8 +29,30 @@ function savePoll(pollId, lectureName, correctOption, totalQuestions, questionTe
   fs.writeFileSync(pollsFile, JSON.stringify(polls, null, 2));
 }
 
-function shuffleQuestion(q) {
+function isTrueFalseQuestion(options) {
+  if (!options || options.length !== 2) return false;
+  const opt1 = options[0].toLowerCase().trim();
+  const opt2 = options[1].toLowerCase().trim();
+  
+  const trueKeywords = ["true", "yes", "صح", "صواب", "نعم", "right", "correct"];
+  const falseKeywords = ["false", "no", "خطأ", "لا", "wrong", "incorrect"];
+  
+  const isOpt1True = trueKeywords.some(kw => opt1 === kw);
+  const isOpt1False = falseKeywords.some(kw => opt2 === kw);
+  const isOpt2True = trueKeywords.some(kw => opt2 === kw);
+  const isOpt2False = falseKeywords.some(kw => opt1 === kw);
+  
+  return (isOpt1True && isOpt1False) || (isOpt2True && isOpt2False);
+}
+
+function shuffleQuestion(q, avoidCorrectIndex = -1) {
   if (!q.options || q.options.length <= 1) return q;
+
+  // 1. True & False questions should NOT be shuffled
+  if (isTrueFalseQuestion(q.options)) {
+    return q;
+  }
+
   const originalCorrect = q.correct ?? q.correctAnswer ?? q.correct_option_id ?? 0;
   const correctText = q.options[originalCorrect];
   if (!correctText) return q;
@@ -48,13 +70,23 @@ function shuffleQuestion(q) {
     }
   }
 
-  for (let i = normalOptions.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [normalOptions[i], normalOptions[j]] = [normalOptions[j], normalOptions[i]];
-  }
+  let shuffledOptions = [];
+  let newCorrectIndex = -1;
+  let attempts = 0;
 
-  const shuffledOptions = [...normalOptions, ...fixedOptions];
-  const newCorrectIndex = shuffledOptions.indexOf(correctText);
+  // Try to shuffle up to 15 times to avoid the specified correct index if possible
+  do {
+    const tempNormal = [...normalOptions];
+    for (let i = tempNormal.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [tempNormal[i], tempNormal[j]] = [tempNormal[j], tempNormal[i]];
+    }
+
+    shuffledOptions = [...tempNormal, ...fixedOptions];
+    newCorrectIndex = shuffledOptions.indexOf(correctText);
+    attempts++;
+  } while (newCorrectIndex === avoidCorrectIndex && attempts < 15 && normalOptions.length > 1);
+
   return newCorrectIndex === -1 ? q : { ...q, options: shuffledOptions, correct: newCorrectIndex };
 }
 
@@ -163,9 +195,11 @@ async function startMassPublishing(ctx, userId, inputtedSubjectName) {
     );
 
     let count = 0;
+    let lastCorrectIndex = -1;
     for (let originalQuestion of questions) {
       try {
-        const shuffledQ = shuffleQuestion(originalQuestion);
+        const shuffledQ = shuffleQuestion(originalQuestion, lastCorrectIndex);
+        lastCorrectIndex = shuffledQ.correct;
 
         // 🔊 إرسال المقطع الصوتي الطبي الاستماعي في حال وجوده مصاحباً للسؤال
         if (shuffledQ.audio) {
